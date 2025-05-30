@@ -15,7 +15,7 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon --watch src --ignore src/backend/data --ext ts --exec ts-node src/index.ts",
+    "dev": "nodemon",
     "start": "ts-node src/index.ts",
     "build": "tsc",
     "pkg": "pkg ."
@@ -30,4 +30,5 @@
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   }
+  
 }
