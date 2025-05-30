@@ -1,3 +1,4 @@
+// src\index.ts
 import { create } from 'venom-bot';
 import { startMessage } from './client/index';
 import { SESSION_CLIENT } from './config/session';
