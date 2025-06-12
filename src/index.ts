@@ -8,7 +8,8 @@ create({
   headless: 'new',
   disableWelcome: true,
   logQR: true
-})  .then((client) => {
+})
+  .then((client) => {
     console.log('🟢 Bot iniciado com sucesso');
     startMessage(client);
   })

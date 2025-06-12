@@ -37,6 +37,22 @@ const CLIENT_PATH = path.join(
 let usersCache: Users = {};
 
 /* === Funções auxiliares === */
+// Carrega todos os usuários (temp + client)
+export function loadAllUsers(): Users {
+  const tempUsers = loadUsers();
+  let clientUsers: Users = {};
+
+  try {
+    ensureFileExists(CLIENT_PATH);
+    const clientData = fs.readFileSync(CLIENT_PATH, 'utf8');
+    clientUsers = clientData ? JSON.parse(clientData) : {};
+  } catch (error) {
+    console.error('❌ Erro ao carregar client.json:', error);
+  }
+
+  return { ...clientUsers, ...tempUsers };
+}
+
 
 // Faz o usuário finalizar o atendimento e voltar caso digite Mynd
 export function isUserFinalizado(phone: string): boolean | null {
@@ -149,16 +165,32 @@ export function moveUserToClient(phone: string): void {
   }
 
   const userData = tempUsers[phone];
-  if (userData) {
-    delete tempUsers[phone];
-    clientUsers[phone] = userData;
 
-    ensureFileExists(TEMP_PATH);
-    ensureFileExists(CLIENT_PATH);
-
-    fs.writeFileSync(TEMP_PATH, JSON.stringify(tempUsers, null, 2));
-    fs.writeFileSync(CLIENT_PATH, JSON.stringify(clientUsers, null, 2));
-
-    usersCache = tempUsers;
+  if (!userData || userData.status !== 'finalizado') {
+    console.log(
+      `🚫 Usuário ${phone} não foi movido. Status diferente de 'finalizado'.`
+    );
+    return;
   }
+
+  // ✅ Agora sim: só se for finalizado
+  clientUsers[phone] = userData;
+  delete tempUsers[phone];
+
+  // Atualiza os arquivos
+  ensureFileExists(TEMP_PATH);
+  ensureFileExists(CLIENT_PATH);
+
+  fs.writeFileSync(TEMP_PATH, JSON.stringify(tempUsers, null, 2));
+  fs.writeFileSync(CLIENT_PATH, JSON.stringify(clientUsers, null, 2));
+
+  usersCache = tempUsers;
+
+  console.log(
+    `✅ Usuário ${phone} movido para client.json com status 'finalizado'.`
+  );
+
 }
+
+
+

@@ -1,15 +1,19 @@
 // src/client/index.ts
 import { Whatsapp } from 'venom-bot';
-import { messages } from '../messages/messages';
+import { BoasVindas } from '../messages/boasVindas';
 import { setTimeout } from 'timers/promises';
 import { UserInfo } from '../utils/userInfo';
+import { sites } from '../messages/sites';
 import {
   loadUsers,
   saveUser,
   setUserEtapa,
   moveUserToClient,
   isUserFinalizado,
+  loadAllUsers,
 } from '../utils/storage';
+import { aplicativos } from '../messages/aplicativos';
+import { automations } from '../messages/automations';
 
 // 🔄 Função para acessar os usuários armazenados
 export function getUsers() {
@@ -64,7 +68,9 @@ async function verificaFinalizado(
 ): Promise<boolean> {
   console.log('🔍 Verificando usuário finalizado...');
 
-  const finalizado = isUserFinalizado(message.from);
+  const allUsers = loadAllUsers();
+  const finalizado = allUsers[message.from]?.status === 'finalizado';
+
   const texto = message.body.toLowerCase();
 
   if (!finalizado) return false;
@@ -83,12 +89,12 @@ async function verificaFinalizado(
       message.from,
       `Olá novamente, ${user.name || 'Cliente'}!\nVamos começar de novo.`
     );
-    await client.sendText(message.from, messages.opcoes);
-
+    await client.sendText(message.from, BoasVindas.opcoes);
+    return true; // continua fluxo
+  } else {
+    // Cliente tentou mandar mensagem sem reativar
     return true;
   }
-
-  return true;
 }
 
 // 👋 Trata o primeiro contato do usuário
@@ -98,7 +104,9 @@ async function verificaNovoUsuario(
   user
 ): Promise<boolean> {
   const users = getUsers();
-  if (users[message.from]) return false;
+  const allUsers = loadAllUsers();
+  const isFinalizado = allUsers[message.from]?.status === 'finalizado';
+  if (users[message.from] || isFinalizado) return false;
 
   const newUser = {
     status: 'ativo' as const,
@@ -113,16 +121,80 @@ async function verificaNovoUsuario(
   await setTimeout(2000);
   await client.sendText(
     message.from,
-    `Olá ${user.name || 'Cliente'}!\n\n${messages.BoasVindas}`
+    `Olá ${user.name || 'Cliente'}!\n\n${BoasVindas.BoasVindas}`
   );
-  await client.sendText(message.from, messages.opcoes);
+  console.log('Mensagem de boas-vindas enviada:', user.name || 'Cliente');
+  console.log('👋 Novo usuário iniciado:', user.name);
+  await client.sendText(message.from, BoasVindas.opcoes);
+  console.log('Menu de opções enviado:', user.name || 'Cliente');
   return true;
+}
+
+async function mostrarMenuDaEtapa(client, phone: string, etapa: number) {
+  switch (etapa) {
+    case 1:
+      await client.sendText(phone, BoasVindas.opcoes);
+      break;
+
+    case 2:
+      await client.sendText(phone, sites.menu);
+      break;
+
+    case 3:
+      await client.sendText(phone, sites.siteInstitucional.menu);
+      break;
+
+    case 4:
+      await client.sendText(phone, sites.ecommerce.menu);
+      break;
+
+    case 5:
+      await client.sendText(phone, sites.blog.menu);
+      break;
+
+    case 6:
+      await client.sendText(phone, aplicativos.menu);
+      break;
+
+    case 7:
+      await client.sendText(phone, automations.menu);
+      break;
+
+    // Adicione outros menus conforme novas etapas
+    default:
+      await client.sendText(phone, 'Menu não encontrado para essa etapa.');
+      break;
+  }
+}
+
+async function encerrarAtendimento(
+  client,
+  phone: string,
+  nome: string = 'Cliente'
+) {
+  // Pega todos os usuários
+  const allUsers = loadUsers();
+
+  // Pega o usuário específico
+  const userData = allUsers[phone] || { etapa: 1 };
+
+  // Atualiza o status e salva
+  await saveUser(phone, {
+    ...userData,
+    etapa: userData.etapa || 1,
+    status: 'finalizado',
+  });
+
+  await moveUserToClient(phone); // Agora pode mover, pois está finalizado
+
+  await client.sendText(phone, `✅ Atendimento encerrado, ${nome}.`);
+  await client.sendText(phone, `Quando quiser retomar, é só mandar "Mynd".`);
 }
 
 // 🧠 Fluxo principal de atendimento por etapa
 async function processaMensagem(client: Whatsapp, message, user) {
   const phone = message.from;
-  const allUsers = getUsers();
+  const allUsers = loadAllUsers();
   const currentUser = allUsers[phone];
   const etapaAtual = currentUser?.etapa || 1;
   const msg = message.body.trim().toLowerCase().replace(/\s+/g, '');
@@ -135,14 +207,26 @@ async function processaMensagem(client: Whatsapp, message, user) {
     case 1:
       await tratarEtapa1(client, message, user, msg);
       break;
+
     case 2:
       await tratarEtapa2(client, message, user, msg);
       break;
 
+    case 3:
+      await tratarEtapa3(client, message, user, msg);
+      break;
+
+    // case 4:
+    //   await tratarEtapa4(client, message, user, msg);
+    //   break;
+
+    // case 5:
+    //   await tratarEtapa5(client, message, user, msg);
+    //   break;
+
     default:
       await client.sendText(phone, 'Ops! Algo deu errado. Reiniciando...');
-      await setUserEtapa(phone, 1, 'Reiniciado por erro de etapa');
-      await client.sendText(phone, messages.opcoes);
+      await mostrarMenuDaEtapa(client, phone, etapaAtual);
   }
 }
 
@@ -152,18 +236,24 @@ async function tratarEtapa1(client, message, user, msg) {
 
   switch (msg) {
     case OpcoesMenuPrincipal.DESENVOLVER_SITE:
-      await client.sendText(phone, messages.subop1);
+      await client.sendText(phone, sites.menu);
       await setUserEtapa(phone, 2, 'op: Desenvolvimento de sites');
       break;
 
     case OpcoesMenuPrincipal.CRIAR_APLICATIVO:
-      await client.sendText(phone, messages.subop2);
+      await client.sendText(phone, aplicativos.menu);
       await setUserEtapa(phone, 2, 'op: Criar aplicativo');
+      break;
+
+    case OpcoesMenuPrincipal.ENCERRAR_ATENDIMENTO:
+      await encerrarAtendimento(client, phone, user.name);
+      console.log(`✅ ${phone} foi encerrado e movido para client.json`);
+
       break;
 
     default:
       await client.sendText(phone, 'Opção inválida. Digite um número do menu.');
-      await client.sendText(phone, messages.opcoes);
+      await client.sendText(phone, BoasVindas.opcoes);
   }
 }
 
@@ -173,27 +263,60 @@ async function tratarEtapa2(client, message, user, msg) {
 
   switch (msg) {
     case '1':
-      await client.sendText(phone, messages.siteInstitucional);
-      await setUserEtapa(phone, 3, 'site institucional');
+      await client.sendText(phone, sites.siteInstitucional.menu);
+      await setUserEtapa(phone, 3, 'submenu site institucional');
       break;
 
     case '2':
-      await client.sendText(phone, messages.ecommerce);
+      await client.sendText(phone, sites.ecommerce.menu);
       await setUserEtapa(phone, 3, 'ecommerce');
       break;
 
     case '3':
-      await client.sendText(phone, messages.portfolio);
+      await client.sendText(phone, sites.portfolio.menu);
       await setUserEtapa(phone, 3, 'portfolio');
       break;
 
     case '0':
-      await client.sendText(phone, messages.opcoes);
+      await client.sendText(phone, BoasVindas.opcoes);
       await setUserEtapa(phone, 1, 'voltou ao menu principal');
       break;
 
     default:
       await client.sendText(phone, 'Opção inválida. Escolha novamente:');
-      await client.sendText(phone, messages.subop1);
+      await client.sendText(phone, sites.menu);
+      break;
+  }
+}
+
+// Etapa 3 - Submenu "site institucional"
+
+async function tratarEtapa3(client, message, user, msg) {
+  const phone = message.from;
+  const tempo = await setTimeout(1500);
+
+  switch (msg) {
+    case '1':
+      await client.sendText(phone, sites.siteInstitucional.explicacao);
+
+      await setUserEtapa(phone, 4, 'explicação: site institucional');
+      break;
+
+    case '2':
+      await client.sendText(phone, sites.siteInstitucional.exemplos);
+      tempo;
+
+      await setUserEtapa(phone, 4, 'exemplos: site institucional');
+      break;
+
+    case '0':
+      await client.sendText(phone, sites.menu);
+      await setUserEtapa(phone, 1, 'voltou ao menu principal do site ');
+      break;
+
+    default:
+      await client.sendText(phone, 'Opção inválida. Escolha novamente:');
+      await client.sendText(phone, sites.siteInstitucional.menu);
+      break;
   }
 }
